@@ -1,0 +1,35 @@
+{
+	"folders": [
+		{
+			"name": "Bluetooth_SPP",
+			"path": "../Documents/PlatformIO/Projects/Bluetooth_SPP"
+		}
+	],
+	"settings": {
+		"files.associations": {
+			"freertos.h": "c",
+			"spp_config.h": "c",
+			"esp_spp_api.h": "c",
+			"soc_caps.h": "c"
+		}
+	},
+	"launch": {
+		"version": "0.2.0",
+		"configurations": []
+	},
+	"tasks": {
+		"version": "2.0.0",
+		"tasks": [
+			{
+				"label": "Run Python Script",
+				"type": "shell",
+				"command": "python",
+				"args": ["${workspaceFolder}/someapp.py"],
+				"group": {
+					"kind": "build",
+					"isDefault": true
+				}
+			}		
+		]
+	}
+}
