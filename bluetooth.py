@@ -65,7 +65,6 @@ class bluetooth:
             print("serial not connected")
 	
     def handle_data_received(self):
-        print("ketriger")
         data = self.serial.readAll().data()
         #print(data)
         value =list()
@@ -81,3 +80,4 @@ class bluetooth:
         self.tab.chart.axes()[1].setRange(min(self.bl_y),max(self.bl_y))
         index = 0 if len(self.bl_x)<256 else len(self.bl_x)-256
         self.tab.chart.axes()[0].setRange(index,self.bl_x[-1])
+    
