@@ -1,10 +1,5 @@
 {
-	"folders": [
-		{
-			"name": "Bluetooth_SPP",
-			"path": "../Documents/PlatformIO/Projects/Bluetooth_SPP"
-		}
-	],
+	"folders": [],
 	"settings": {
 		"files.associations": {
 			"freertos.h": "c",
