@@ -1,11 +1,11 @@
 import math
-from PySide6.QtWidgets import QSpacerItem, QComboBox, QWidget, QVBoxLayout, QLabel, QFileDialog, QPushButton, QHBoxLayout
+from PySide6.QtWidgets import QLineEdit, QComboBox, QWidget, QVBoxLayout, QLabel, QFileDialog, QPushButton, QHBoxLayout, QMessageBox
 from PySide6.QtCharts import QChart, QChartView , QLineSeries 
 from PySide6.QtCore import QPointF, QTimer, Qt
+from PySide6.QtGui import QDoubleValidator
 from PySide6.QtSerialPort import QSerialPortInfo
-from PySide6.QtGui import QPainter  # Import QPainter for antialiasing
-from somechart import ChartWithToggle
 from bluetooth import bluetooth 
+import pyqtgraph as pg
 
 import sys
 
@@ -14,26 +14,10 @@ class tab_1(QWidget):
         super().__init__()
         self.bt = bluetooth(self)
 
-        # Create a QLineSeries for the line chart
-        self.series = QLineSeries()
-        self.series.setName("Signal")
-
-        # Add data points (sine wave)
-        #for x in range(0, 101):
-        #    self.series.append(QPointF(x / 10.0, math.sin(x / 10.0)))
-
-        # Create a chart and add the series
-        self.chart = QChart()
-        self.chart.addSeries(self.series)
-        self.chart.setTitle("ADC Graph")
-        self.chart.createDefaultAxes()
-        self.chart.axes()[0].setTitleText("X")
-        self.chart.axes()[1].setTitleText("Y")
-        self.chart.setAnimationOptions(QChart.SeriesAnimations)
-
-        # Create a chart view and set the chart
-        chart_view = ChartWithToggle(self.chart)
-
+        #Chart with pyqtgraph
+        self.plot_widget = pg.PlotWidget()
+        self.plot = self.plot_widget.getPlotItem().plot()
+        self.plot.setDownsampling(auto = True, method = 'subsample')
 
         #first row button
         self.bl_indicator = IndicatorLight(color="red")
@@ -66,6 +50,13 @@ class tab_1(QWidget):
         self.resetbutton = QPushButton("Reset")
         self.resetbutton.clicked.connect(self.reset_button)
 
+        self.stepbutton = QPushButton("Step")
+        self.stepbutton.clicked.connect(self.step_button)
+
+        self.step_len = QLineEdit()
+        self.step_len.setPlaceholderText("Set the step len")
+
+
         layout_atas = QHBoxLayout()
         layout_atas.addWidget(self.bl_indicator)
         #layout_atas.addSpacerItem(QSpacerItem(200, 0, QSizePolicy.Fixed, QSizePolicy.Minimum))
@@ -77,7 +68,7 @@ class tab_1(QWidget):
         
         layout = QVBoxLayout()
         layout.addLayout(layout_atas)
-        layout.addWidget(chart_view)
+        layout.addWidget(self.plot_widget)
 
         layout_button1 = QHBoxLayout()
         layout_button1.addWidget(self.button)
@@ -87,8 +78,13 @@ class tab_1(QWidget):
         layout_button2.addWidget(self.savebutton)
         layout_button2.addWidget(self.resetbutton)
 
+        layout_button3 = QHBoxLayout()
+        layout_button3.addWidget(self.step_len)
+        layout_button3.addWidget(self.stepbutton)
+
         layout.addLayout(layout_button1)
         layout.addLayout(layout_button2)
+        layout.addLayout(layout_button3)
     
         self.setLayout(layout)
 
@@ -96,11 +92,24 @@ class tab_1(QWidget):
         self.timer.timeout.connect(self.update)
         self.updating = False
 
+    def step_button(self):
+        len = self.step_len.text()
+        try:
+            len=float(len)
+            if len>180 or len<=0:
+                QMessageBox.critical(self,"Please set valid value", "Valid length value is bigger than 0 sec and lesser than 180 sec (3 minutes)")
+            else:
+                print(len)    
+                
+        except:
+            QMessageBox.critical(self,"Please set valid value", "Length can't contain any alphabet and semicolon (use . for decimal point) ")
+
+        
+
     def reset_button(self):
-        self.series.clear()
         self.bt.bl_x.clear()
         self.bt.bl_y.clear()
-        self.chart.axes()[0].setRange(0,256)
+        self.plot.setData()
 
     def save_series_to_file(self):
         filename, _ = QFileDialog.getSaveFileName(
@@ -110,8 +119,8 @@ class tab_1(QWidget):
         if filename:
             with open(filename, 'w') as file:
                 file.write("x,y\n")  # CSV header
-                for point in self.series.pointsVector():
-                    file.write(f"{point.x()},{point.y()}\n")
+                for point in zip(self.bt.bl_x, self.bt.bl_y):
+                    file.write(f"{point[0]},{point[1]}\n")
             print(f"QLineSeries saved to {filename}")
 
     def pilihan(self,text):

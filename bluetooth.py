@@ -1,4 +1,3 @@
-import serial
 import numpy as np
 from PySide6.QtSerialPort import QSerialPort
 from PySide6.QtCore import QIODevice,QPointF
@@ -32,13 +31,7 @@ class bluetooth:
                 self.serial.readyRead.connect(self.handle_data_received)
             else:
                 QMessageBox.critical(self.tab, "Error", f"Failed to open port:\n{self.serial.errorString()}")
-        # try:
-        #     self.port = "COM7"  # or "COM5" on Windows
-        #     self.ser = serial.Serial(self.port, baudrate=9600, timeout=1)
-        #     print('berhasil')
-        #     self.is_connected = True
-        # except serial.SerialException as e:
-        #     print(f"Could not open serial port {self.port}: {e}") 
+    
             
     def bt_dissconnect(self):
         self.serial.close()
@@ -50,16 +43,18 @@ class bluetooth:
             self.serial.write(msg.encode('utf-8'))
         else:
             print("serial not connected")
-        # x = [0,1,2,3]
-        # y = [1,2,1,3]
-        # point = [QPointF(x,y) for x,y in zip(x,y)]
-        # self.tab.series.append(point)
-        # self.tab.chart.axes()[1].setRange(min(y),max(y))
-        # self.tab.chart.axes()[0].setRange(0,5)
 
     def bt_stop(self):
         if self.is_connected:
             msg = "stop\n"
+            self.serial.write(msg.encode('utf-8'))
+        else:
+            print("serial not connected")
+    
+    def bt_step(self):
+        if self.is_connected:
+            print("step")
+            msg = "step\n"
             self.serial.write(msg.encode('utf-8'))
         else:
             print("serial not connected")
@@ -75,9 +70,9 @@ class bluetooth:
         start = 0 if not self.bl_x else self.bl_x[-1] + 1
         self.bl_x.extend(range(start,start+len(value)))
 
-        points = [QPointF(x,y) for x,y in zip(range(start,start+len(value)),value)]
-        self.tab.series.append(points)
-        self.tab.chart.axes()[1].setRange(min(self.bl_y),max(self.bl_y))
-        index = 0 if len(self.bl_x)<256 else len(self.bl_x)-256
-        self.tab.chart.axes()[0].setRange(index,self.bl_x[-1])
-    
+        #self.tab.plot.setData(np.array(self.bl_y[-1024:]))
+
+        self.tab.plot.setData(np.array(self.bl_y))
+        index = 0 if len(self.bl_x)<1024 else len(self.bl_x)-1024
+        self.tab.plot_widget.setXRange(index,self.bl_x[-1])
+       
