@@ -99,8 +99,8 @@ class tab_1(QWidget):
             if len>180 or len<=0:
                 QMessageBox.critical(self,"Please set valid value", "Valid length value is bigger than 0 sec and lesser than 180 sec (3 minutes)")
             else:
-                print(len)    
-                
+                print(len)
+                self.bt.bt_step(len)
         except:
             QMessageBox.critical(self,"Please set valid value", "Length can't contain any alphabet and semicolon (use . for decimal point) ")
 

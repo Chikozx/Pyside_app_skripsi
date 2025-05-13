@@ -51,11 +51,15 @@ class bluetooth:
         else:
             print("serial not connected")
     
-    def bt_step(self):
+    def bt_step(self, len):
         if self.is_connected:
-            print("step")
-            msg = "step\n"
-            self.serial.write(msg.encode('utf-8'))
+            frame_size =  int(len *360/32)
+            step_cmd = "step"
+            step_cmd = step_cmd.encode()
+            buf = bytearray()
+            buf.extend(step_cmd)
+            buf.extend(frame_size.to_bytes())
+            self.serial.write(buf)
         else:
             print("serial not connected")
 	
