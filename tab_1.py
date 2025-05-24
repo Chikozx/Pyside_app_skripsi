@@ -1,18 +1,30 @@
 import math
-from PySide6.QtWidgets import QLineEdit, QComboBox, QWidget, QVBoxLayout, QLabel, QFileDialog, QPushButton, QHBoxLayout, QMessageBox
-from PySide6.QtCharts import QChart, QChartView , QLineSeries 
-from PySide6.QtCore import QPointF, QTimer, Qt
-from PySide6.QtGui import QDoubleValidator
+from PySide6.QtWidgets import QLineEdit, QComboBox, QWidget, QVBoxLayout, QLabel, QFileDialog, QPushButton, QHBoxLayout, QMessageBox, QGroupBox
+from PySide6.QtCore import QThread, QTimer, Qt, Slot
 from PySide6.QtSerialPort import QSerialPortInfo
-from bluetooth import bluetooth 
+from bluetooth import bluetooth, Data_Prediction_Worker
 import pyqtgraph as pg
-
-import sys
+from config import UI_ONLY
 
 class tab_1(QWidget):
     def __init__(self):
         super().__init__()
         self.bt = bluetooth(self)
+
+        if not UI_ONLY:
+            #Multi thread dan Data Process Object
+            self.process_thread = QThread(self)
+            self.prediction_worker = Data_Prediction_Worker()
+            self.prediction_worker.moveToThread(self.process_thread)
+
+            #Connect the processing Signal and Slot
+            self.bt.Data_ready.connect(self.prediction_worker.start_prediction)
+            self.prediction_worker.Prediction_done.connect(self.print_test)
+
+            #Connect cleaning thread and worker signal and slot
+            self.process_thread.finished.connect(self.prediction_worker.deleteLater)
+            
+            self.process_thread.start()
 
         #Chart with pyqtgraph
         self.plot_widget = pg.PlotWidget()
@@ -38,11 +50,11 @@ class tab_1(QWidget):
         self.port_select.currentTextChanged.connect(self.pilihan)
 
         #Last row button
-        self.button = QPushButton("Start")
-        self.button.clicked.connect(self.bluetooth_click)
+        self.button_start = QPushButton("Start")
+        self.button_start.clicked.connect(self.bluetooth_start)
 		
-        self.button2 = QPushButton("Stop")
-        self.button2.clicked.connect(self.bluetooth_stop)
+        self.button_stop = QPushButton("Stop")
+        self.button_stop.clicked.connect(self.bluetooth_stop)
 
         self.savebutton = QPushButton("Save to File")
         self.savebutton.clicked.connect(self.save_series_to_file)
@@ -50,12 +62,14 @@ class tab_1(QWidget):
         self.resetbutton = QPushButton("Reset")
         self.resetbutton.clicked.connect(self.reset_button)
 
-        self.stepbutton = QPushButton("Step")
+        self.stepbutton = QPushButton("Start step")
         self.stepbutton.clicked.connect(self.step_button)
 
-        self.step_len = QLineEdit()
-        self.step_len.setPlaceholderText("Set the step len")
 
+        step_label = QLabel("Please set the step length in seconds:")
+        self.step_len = QLineEdit()
+        self.step_len.setPlaceholderText("Seconds (s)")
+        self.step_len.setMaximumWidth(75)
 
         layout_atas = QHBoxLayout()
         layout_atas.addWidget(self.bl_indicator)
@@ -66,31 +80,58 @@ class tab_1(QWidget):
         layout_atas.addWidget(self.bl_button, alignment= Qt.AlignRight)
         
         
-        layout = QVBoxLayout()
-        layout.addLayout(layout_atas)
-        layout.addWidget(self.plot_widget)
+        Central_Layout = QVBoxLayout()
+        Central_Layout.addLayout(layout_atas)
+        Central_Layout.addWidget(self.plot_widget)
 
+        layout_mode = QHBoxLayout()
+        self.mode_combo = QComboBox()
+        self.mode_combo.addItem("No Compression Mode")
+        self.mode_combo.addItem("Compression Mode")
+        self.mode_combo.currentTextChanged.connect(self.mode_changed)
+    
+        layout_mode.addWidget(self.mode_combo)
+
+        self.gb_button1 = QGroupBox("Continous")
         layout_button1 = QHBoxLayout()
-        layout_button1.addWidget(self.button)
-        layout_button1.addWidget(self.button2)
+        layout_button1.addWidget(self.button_start)
+        layout_button1.addWidget(self.button_stop)
+        self.gb_button1.setLayout(layout_button1)
 
         layout_button2 = QHBoxLayout()
         layout_button2.addWidget(self.savebutton)
         layout_button2.addWidget(self.resetbutton)
 
         layout_button3 = QHBoxLayout()
+        layout_button3.addWidget(step_label)
         layout_button3.addWidget(self.step_len)
+        layout_button3.addStretch()
         layout_button3.addWidget(self.stepbutton)
 
-        layout.addLayout(layout_button1)
-        layout.addLayout(layout_button2)
-        layout.addLayout(layout_button3)
+        Central_Layout.addLayout(layout_mode)
+        Central_Layout.addWidget(self.gb_button1)
+        Central_Layout.addLayout(layout_button2)
+        Central_Layout.addLayout(layout_button3)
     
-        self.setLayout(layout)
+        self.setLayout(Central_Layout)
 
         self.timer = QTimer()
         self.timer.timeout.connect(self.update)
         self.updating = False
+
+    @Slot(str)
+    def mode_changed(self,mode):
+        print(mode)
+        if mode == "Compression Mode":
+            self.gb_button1.setEnabled(False)
+        elif mode == "No Compression Mode":
+            self.gb_button1.setEnabled(True)
+
+    @Slot(object)
+    def print_test(self,data):
+        print("From Tab")
+        # print(data[0,:,0])
+        self.plot.setData(data[0,:,0])
 
     def step_button(self):
         len = self.step_len.text()
@@ -99,13 +140,11 @@ class tab_1(QWidget):
             if len>180 or len<=0:
                 QMessageBox.critical(self,"Please set valid value", "Valid length value is bigger than 0 sec and lesser than 180 sec (3 minutes)")
             else:
-                print(len)
                 self.bt.bt_step(len)
         except:
             QMessageBox.critical(self,"Please set valid value", "Length can't contain any alphabet and semicolon (use . for decimal point) ")
 
         
-
     def reset_button(self):
         self.bt.bl_x.clear()
         self.bt.bl_y.clear()
@@ -127,11 +166,11 @@ class tab_1(QWidget):
         print(text)
         self.bt.set_port(text)
 
-    def bluetooth_click(self):
-        #if self.bt.is_connected:
-        self.bt.bt_start()
-        #else:
-        #    print("Not Connected")
+    def bluetooth_start(self):
+        if not UI_ONLY:
+            self.bt.bt_start()
+        else:
+            print(self.mode_combo.currentText())
 	
     def bluetooth_stop(self):
         self.bt.bt_stop()
@@ -147,6 +186,11 @@ class tab_1(QWidget):
         self.bl_indicator.set_color('blue' if self.bt.is_connected else 'red')
         self.bl_button.setText("Disconnect Bluetooth" if self.bt.is_connected else 'Connect Bluetooth')
     
+    def stopThread(self):
+
+        if not UI_ONLY:
+            self.process_thread.quit()
+            self.process_thread.wait()
 
 class IndicatorLight(QLabel):
     def __init__(self, color="gray", diameter=30):
