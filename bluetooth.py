@@ -1,15 +1,15 @@
 import numpy as np
 from PySide6.QtSerialPort import QSerialPort
-from PySide6.QtCore import QIODevice, Signal, QObject, Slot
+from PySide6.QtCore import QIODevice, Signal, QObject, Slot, QMetaMethod
 from PySide6.QtWidgets import QMessageBox
 from config import UI_ONLY
 if not UI_ONLY:
     import tensorflow as tf
-
 import time
 
 class bluetooth(QObject):
     Data_ready = Signal(object)
+    Data_ready_no_work = Signal(object)
 
     def __init__(self, tab = None):
         super().__init__()
@@ -19,13 +19,14 @@ class bluetooth(QObject):
         self.tab = tab
         self.is_connected = False
         self.ser = None
+        self.mode = 0
 
         # self.bl_x = []
         # self.bl_y = []
         # self.data_state = 0
         self.is_transmit = False
         self.port_name = None
-    
+
     def set_port(self,port_name):
         self.port_name = port_name
         self.serial.setPortName(port_name)
@@ -60,51 +61,121 @@ class bluetooth(QObject):
         else:
             print("serial not connected")
     
-    def bt_step(self, len):
+    def bt_step(self, len, mode):
+        if mode == "MO0":
+            print("mode no compress")
+        else:
+            print("mode compress")
+        print(f"{mode}")
         if self.is_connected:
             frame_size =  int(len)
-            step_cmd = "step"
+            step_cmd = "step0" if mode == "MO0" else "step1"
             step_cmd = step_cmd.encode()
             buf = bytearray()
             buf.extend(step_cmd)
             buf.extend(frame_size.to_bytes())
             self.serial.write(buf)
             print(frame_size)
+            self.mode=1
         else:
             print("serial not connected")
 	
     def handle_data_received(self):
-        data = self.serial.readAll().data()
+        if self.mode == 0:
+            data = self.serial.read(256).data()
+            if(data):
+                arr = np.frombuffer(data,dtype='<i4')
+                #print(f"Array: {len(data)} \n")
+                # print(f"Array len: {arr.shape} \n")
+                self.Data_ready_no_work.emit(arr)
 
-        if(data):
-            arr = np.frombuffer(data[0:416],dtype='<f4')
-            max = int.from_bytes(data[416:420], byteorder="little")
-            min = int.from_bytes(data[420:424], byteorder="little")
-            print("Array:")
-            self.Data_ready.emit(arr)
+        elif self.mode == 1:
+            data = self.serial.readAll().data()
+            if(data):
+                print(f"uk: {len(data)}")
+                arr = np.frombuffer(data,dtype='<i4')
+                self.Data_ready_no_work.emit(arr)
+                
+        elif self.mode == 2:
+            print("Sorry belum")
+            data = self.serial.readAll().data()
+            if(data):
+                print(f"uk: {len(data)}")
+                # arr = np.frombuffer(data,dtype='<i4')
+                # self.Data_ready_no_work.emit(arr)
+        
+        
+
+    def config_ack(self):
+        if self.serial.waitForReadyRead(1000):
+            data = self.serial.readAll().data()
+            if(data == b'ACK'):
+                return 1
+            else:
+                return 0
+        else:
+            print("timeout")
+            return 0 
+        
+    def send_config(self, model):
+        rr_sig = QMetaMethod.fromSignal(self.serial.readyRead)
+        if self.serial.isSignalConnected(rr_sig)==1:
+            self.serial.readyRead.disconnect(self.handle_data_received)
+
+        #Send config command
+        msg = "config"
+        self.serial.write(msg.encode("utf-8"))
+        if self.config_ack() !=1: return 0
+
+        #Send Model Name
+        msg = f"M:{model.name}"
+        self.serial.write(msg.encode("utf-8"))
+        if self.config_ack() !=1: return 0
+        
+        #Send SM Size
+        msg = f"S:".encode("utf-8")
+        msg = bytearray(msg)
+        msg.extend(model.SM_size[0].to_bytes(2,"little"))
+        msg.extend(model.SM_size[1].to_bytes(2,"little")) 
+        self.serial.write(msg)
+        if self.config_ack() !=1: return 0
+
+        if model.SM is not None and model.SM.size>0 :
+            bits = (model.SM == 1).astype(np.uint8)
+            n, m = bits.shape
+            pad_len = (-m) % 8
+            if pad_len > 0:
+                bits = np.pad(bits, ((0,0), (0,pad_len)), constant_values=0)
+            print(bits[0])
+            bytes_array = np.packbits(bits, axis=1)
+            print(bytes_array[0])
             
-            # print(arr)
-            # print(data[416:420])
-            # print(data[420:424])
-            # print(f"Max Value: {max}")
-            # print(f"Min Value: {min}")
+            for i in range (len(bytes_array)):
+                #Send SM Size
+                msg = f"D:".encode("utf-8")
+                msg = bytearray(msg)
+                msg.extend(bytes_array[i].tobytes())
+                self.serial.write(msg)
+                if self.config_ack() !=1: return 0
+        else:
+            msg = f"D:".encode("utf-8")
+            msg = bytearray(msg)
+            msg.extend(0x00)
+            self.serial.write(msg)
+            if self.config_ack() !=1: return 0
+        
+        msg = "config_done".encode("utf-8")
+        msg = bytearray(msg)
+        self.serial.write(msg)
+        if self.config_ack() !=1: return 0
+        
+        self.serial.readyRead.connect(self.handle_data_received)
+        return 1
+
+
+
+
             
-        # print(data)
-        # print(f"data_len, {len(data)}")
-        # # value =list()
-        # for i in range(int(len(data)/4)):
-        #     value.append(int.from_bytes(data[i*4:i*4+4],byteorder='little'))
-
-        # self.bl_y.extend(value)
-        # start = 0 if not self.bl_x else self.bl_x[-1] + 1
-        # self.bl_x.extend(range(start,start+len(value)))
-
-        # #self.tab.plot.setData(np.array(self.bl_y[-1024:]))
-
-        # self.tab.plot.setData(np.array(self.bl_y))
-        # index = 0 if len(self.bl_x)<1024 else len(self.bl_x)-1024
-        # self.tab.plot_widget.setXRange(index,self.bl_x[-1])
-
 
 class Data_Prediction_Worker(QObject):
     Prediction_done = Signal(object)

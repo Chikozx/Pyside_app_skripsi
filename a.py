@@ -1,29 +1,23 @@
-from PySide6.QtWidgets import (
-    QApplication, QWidget, QPushButton, QVBoxLayout, QHBoxLayout, QGroupBox
-)
-import sys
+# import tensorflow as tf
+import numpy as np
+matrix = np.array([
+    [ 1, -1,  1,  1, -1, -1,  1, -1, 1, 1],
+    [-1, -1,  1, -1,  1,  1, -1,  1, 1, -1]
+])
 
-class MyWidget(QWidget):
-    def __init__(self):
-        super().__init__()
+bits = (matrix == 1).astype(np.uint8)
 
-        # Create a group box to represent the button group
-        group_box = QGroupBox("Mode Selection")
+n, m = bits.shape
+pad_len = (-m) % 8
+if pad_len > 0:
+    bits = np.pad(bits, ((0,0), (0,pad_len)), constant_values=0)
 
-        # Layout for buttons in the row
-        button_layout = QHBoxLayout()
-        button_layout.addWidget(QPushButton("Auto"))
-        button_layout.addWidget(QPushButton("Manual"))
-        button_layout.addWidget(QPushButton("Off"))
+print(bits)
+bytes_array = np.packbits(bits, axis=1)
+# bytes_array2 = np.packbits(bits, axis=0)
+bytes_obj = bytes_array.tobytes()
 
-        group_box.setLayout(button_layout)
-
-        # Main layout
-        main_layout = QVBoxLayout()
-        main_layout.addWidget(group_box)
-        self.setLayout(main_layout)
-
-app = QApplication(sys.argv)
-window = MyWidget()
-window.show()
-sys.exit(app.exec())
+print(bytes_array)
+print(len(bytes_obj))
+for i in range(len(bytes_obj)):
+    print(bytes_obj[i])
