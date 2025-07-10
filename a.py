@@ -1,23 +1,31 @@
-# import tensorflow as tf
-import numpy as np
-matrix = np.array([
-    [ 1, -1,  1,  1, -1, -1,  1, -1, 1, 1],
-    [-1, -1,  1, -1,  1,  1, -1,  1, 1, -1]
-])
+import pyqtgraph as pg
+from PySide6.QtWidgets import QApplication
+import sys
 
-bits = (matrix == 1).astype(np.uint8)
+app = QApplication(sys.argv)
+plot_widget = pg.plot()
+plot_widget.setWindowTitle('PyQtGraph Plot')
 
-n, m = bits.shape
-pad_len = (-m) % 8
-if pad_len > 0:
-    bits = np.pad(bits, ((0,0), (0,pad_len)), constant_values=0)
+# Set background and title
+plot_widget.setBackground('w')
+plot_widget.setTitle("My Chart Title", color='k', size='16pt')
 
-print(bits)
-bytes_array = np.packbits(bits, axis=1)
-# bytes_array2 = np.packbits(bits, axis=0)
-bytes_obj = bytes_array.tobytes()
+# Add axis labels
+plot_widget.setLabel('left', 'Y Axis', color='black', size='12pt')
+plot_widget.setLabel('bottom', 'X Axis', color='black', size='12pt')
 
-print(bytes_array)
-print(len(bytes_obj))
-for i in range(len(bytes_obj)):
-    print(bytes_obj[i])
+# Add margin
+plot_widget.getPlotItem().getViewBox().suggestPadding(2)
+
+# Plot data
+x = [0, 1, 2, 3, 4]
+y1 = [1, 2, 3, 2, 1]
+y2 = [2, 3, 1, 3, 2]
+
+plot_widget.plot(x, y1, pen=pg.mkPen('r', width=2), name='Line 1')
+plot_widget.plot(x, y2, pen=pg.mkPen('b', width=2), name='Line 2')
+
+# Add legend
+plot_widget.addLegend()
+
+sys.exit(app.exec_())

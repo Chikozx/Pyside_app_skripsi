@@ -139,7 +139,7 @@ class SerialMonitor(QWidget):
         else:
             port_name = self.port_selector.currentText()
             self.serial.setPortName(port_name)
-            self.serial.setBaudRate(QSerialPort.BaudRate.Baud9600)
+            self.serial.setBaudRate(QSerialPort.BaudRate.Baud115200)
             if self.serial.open(QIODevice.ReadWrite):
                 self.connect_button.setText("Disconnect")
             else:

@@ -5,11 +5,17 @@ from PySide6.QtWidgets import QMessageBox
 from config import UI_ONLY
 if not UI_ONLY:
     import tensorflow as tf
+    #For Sanity Check
+    from keras.saving import register_keras_serializable
+
 import time
 
 class bluetooth(QObject):
     Data_ready = Signal(object)
     Data_ready_no_work = Signal(object)
+
+    #For Sanity Check
+    Data_Ready_all_Encoder =  Signal(object)
 
     def __init__(self, tab = None):
         super().__init__()
@@ -21,11 +27,16 @@ class bluetooth(QObject):
         self.ser = None
         self.mode = 0
 
+        #For Sanity Check
+        self.step_len = 0
+        self.buffer = []
+
         # self.bl_x = []
         # self.bl_y = []
         # self.data_state = 0
         self.is_transmit = False
         self.port_name = None
+
 
     def set_port(self,port_name):
         self.port_name = port_name
@@ -51,6 +62,7 @@ class bluetooth(QObject):
         if self.is_connected:
             msg = "start\n"
             self.serial.write(msg.encode('utf-8'))
+            self.mode=2
         else:
             print("serial not connected")
 
@@ -64,19 +76,26 @@ class bluetooth(QObject):
     def bt_step(self, len, mode):
         if mode == "MO0":
             print("mode no compress")
+            self.mode=0
+        elif mode == "MODD":
+            print("Mode all compress")
+            self.mode=4
         else:
-            print("mode compress")
-        print(f"{mode}")
+            print("Compression Mode")
+            self.mode=1
+
         if self.is_connected:
             frame_size =  int(len)
-            step_cmd = "step0" if mode == "MO0" else "step1"
+            
+            # For Sanity Check
+            self.step_len = frame_size
+            step_cmd = "step0" if mode == "MO0" or mode == "MODD" else "step1"
             step_cmd = step_cmd.encode()
             buf = bytearray()
             buf.extend(step_cmd)
             buf.extend(frame_size.to_bytes())
             self.serial.write(buf)
-            print(frame_size)
-            self.mode=1
+            
         else:
             print("serial not connected")
 	
@@ -85,25 +104,39 @@ class bluetooth(QObject):
             data = self.serial.read(256).data()
             if(data):
                 arr = np.frombuffer(data,dtype='<i4')
-                #print(f"Array: {len(data)} \n")
-                # print(f"Array len: {arr.shape} \n")
                 self.Data_ready_no_work.emit(arr)
-
+         
         elif self.mode == 1:
             data = self.serial.readAll().data()
             if(data):
-                print(f"uk: {len(data)}")
-                arr = np.frombuffer(data,dtype='<i4')
-                self.Data_ready_no_work.emit(arr)
+                m = self.tab.model.SM_size[0]
+                print(f"Data Received size: {len(data)}")
+                arr = np.frombuffer(data[0:m*4],dtype='<f4')
+                mm = np.frombuffer(data[m*4:],dtype='<i4')
+                df = data_frame(arr,mm[0],mm[1])
+                
+                print(f"MODE 1 Data length: {len(arr)}, Max: {mm[0]}, Min: {mm[1]}")
+                self.buffer.append(df)
+
+                if(len(self.buffer)==self.step_len):
+                    self.Data_ready.emit(self.buffer)
+                    self.buffer=[]
                 
         elif self.mode == 2:
-            print("Sorry belum")
             data = self.serial.readAll().data()
             if(data):
-                print(f"uk: {len(data)}")
-                # arr = np.frombuffer(data,dtype='<i4')
-                # self.Data_ready_no_work.emit(arr)
-        
+                arr = np.frombuffer(data,dtype='<i4')
+                self.Data_ready_no_work.emit(arr)
+
+        #For Sanity Check
+        elif self.mode == 4:
+            data = self.serial.read(512).data()
+            if(data):
+                arr = np.frombuffer(data,dtype='<i4')
+                self.buffer.extend(arr)
+                if(len(self.buffer) == 256 * self.step_len):
+                    self.Data_Ready_all_Encoder.emit(self.buffer)
+                    self.buffer=[]        
         
 
     def config_ack(self):
@@ -119,8 +152,11 @@ class bluetooth(QObject):
         
     def send_config(self, model):
         rr_sig = QMetaMethod.fromSignal(self.serial.readyRead)
-        if self.serial.isSignalConnected(rr_sig)==1:
+        while self.serial.isSignalConnected(rr_sig):
             self.serial.readyRead.disconnect(self.handle_data_received)
+
+        if self.serial.isSignalConnected(rr_sig)==1:
+            print("masih ada")
 
         #Send config command
         msg = "config"
@@ -173,22 +209,81 @@ class bluetooth(QObject):
         return 1
 
 
+if not UI_ONLY:
+    @register_keras_serializable()
+    class AntipodalConstraint(tf.keras.constraints.Constraint):
+        def __call__(self, w):
+            return tf.sign(w)  # Forces weights to -1 or 1
 
 
-            
+class Data_Prediction_Sanity(QObject):
+    Prediction_done = Signal(object)
+    model = tf.keras.models.load_model("__models/MFFSE_SR_0_41_fix.keras",custom_objects={"AntipodalConstraint": AntipodalConstraint})
+    norm_data=[]
+
+    @Slot(object)
+    def pred(self,data):
+        l = int(len(data)/256)
+        split_data = np.zeros((l,256))
+        for i in range(l):
+            split_data[i] = data[i*256:(i*256)+256]
+        
+        split_data_norm = np.zeros((l,256))
+        for i in range(l):
+            split_data_norm[i] = (split_data[i] - np.min(split_data[i]))/(np.max(split_data[i])-np.min(split_data[i]))
+        
+        output = self.model(split_data_norm)
+        print(f"Data len san worker {split_data_norm.shape}")
+        print(f"Output shape {output.shape}")
+        self.Prediction_done.emit(output)
+
+
 
 class Data_Prediction_Worker(QObject):
     Prediction_done = Signal(object)
 
     if not UI_ONLY:    
-        Model =  tf.keras.models.load_model('MFFSE_SR_0_41_benar_decoder_side.keras')
-
+        def __init__(self, tab=None):
+            super().__init__(tab)
+            self.tab = tab
+            
         @Slot(object)
         def start_prediction(self, data):
-            print("Data process Object")
+            prediction_buffer = np.zeros((len(data),data[0].data.shape[0]))
+            
+            for i in range (len(data)):
+                prediction_buffer[i] = data[i].data
+
+            if self.tab.model.keras_model.name == "MFFSE":
+                y = self.tab.model.decoder(prediction_buffer)
+                y = np.array(y)
+                for i in range(len(data)):
+                    y[i,:,0] = (y[i,:,0] * (data[i].max - data[i].min)) + data[i].min
+                
+                y = np.squeeze(y)
+                self.Prediction_done.emit(y)
+
+            elif self.tab.model.keras_model.name == "TCSSO":
+                y = np.empty((len(data),256))
+                for i in range(len(prediction_buffer)):
+                    y[i] = self.tab.model.reconstruct_signal(prediction_buffer[i])
+                
+                for i in range(len(data)):
+                    y[i] = (y[i] * (data[i].max - data[i].min)) + data[i].min
+                
+                self.Prediction_done.emit(y)
+
+
+            # To Check For Time
+            # start = time.perf_counter()
+            # y = self.Model(data.reshape(1,data.shape[0]))
             # print(data)
-            start = time.perf_counter()
-            y = self.Model(data.reshape(1,data.shape[0]))
-            end = time.perf_counter()
-            print(f"Time spent calculating : {end-start:.5f} Seconds")
-            self.Prediction_done.emit(y)
+            # end = time.perf_counter()
+            # print(f"Time spent calculating : {end-start:.5f} Seconds")
+            # self.Prediction_done.emit(y)
+
+class data_frame():
+    def __init__(self,data,max,min):
+        self.data = data
+        self.min = min
+        self.max = max

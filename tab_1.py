@@ -2,7 +2,7 @@ import numpy as np
 from PySide6.QtWidgets import QLineEdit, QComboBox, QWidget, QVBoxLayout, QLabel, QFileDialog, QPushButton, QHBoxLayout, QMessageBox, QGroupBox, QGridLayout, QSizePolicy
 from PySide6.QtCore import QThread, QTimer, Qt, Slot
 from PySide6.QtSerialPort import QSerialPortInfo
-from bluetooth import bluetooth, Data_Prediction_Worker
+from bluetooth import bluetooth, Data_Prediction_Worker, Data_Prediction_Sanity
 from model_obj import model
 import pyqtgraph as pg
 from config import UI_ONLY
@@ -18,17 +18,25 @@ class tab_1(QWidget):
         if not UI_ONLY:
             #Multi thread dan Data Process Object
             self.process_thread = QThread(self)
-            self.prediction_worker = Data_Prediction_Worker()
+            self.prediction_worker = Data_Prediction_Worker(self)
             self.prediction_worker.moveToThread(self.process_thread)
 
             #Connect the processing Signal and Slot
-            #self.bt.Data_ready.connect(self.setplot)
+            self.bt.Data_ready.connect(self.prediction_worker.start_prediction)
             self.bt.Data_ready_no_work.connect(self.setplot)
             self.prediction_worker.Prediction_done.connect(self.print_test)
 
-            #Connect cleaning thread and worker signal and slot
+            #For Sanity Check
+            # self.pred_san = Data_Prediction_Sanity()
+            # self.pred_san.moveToThread(self.process_thread)
+            # self.bt.Data_Ready_all_Encoder.connect(self.pred_san.pred)
+            # self.pred_san.Prediction_done.connect(self.setplot_sanity)
+            # self.process_thread.finished.connect(self.pred_san.deleteLater)
+
+            # Connect cleaning thread and worker signal and slot
             self.process_thread.finished.connect(self.prediction_worker.deleteLater)
             
+
             self.process_thread.start()
 
         #Chart with pyqtgraph
@@ -91,6 +99,7 @@ class tab_1(QWidget):
         layout_mode = QGridLayout()
         self.mode_combo = QComboBox()
         self.mode_combo.addItem("No Compression Mode",userData="MO0")
+        self.mode_combo.addItem("All encoder",userData="MODD")
         #self.mode_combo.addItem("Compression Mode") <- model is none initialized
         
         self.mode_combo.currentTextChanged.connect(self.mode_changed)
@@ -147,6 +156,16 @@ class tab_1(QWidget):
         self.timer.timeout.connect(self.update)
         self.updating = False
 
+
+    #For Sanity Check
+    @Slot(object)
+    def setplot_sanity(self,data):
+        print("Setplot sanity")
+        for i in range(data.shape[0]):
+            self.plot_data.extend(data[i,:,0])
+        print(f"len of plot data :{len(self.plot_data)}")
+        self.plot.setData(self.plot_data)
+
     @Slot(object)
     def setplot(self,data):
         self.plot_data.extend(data)
@@ -175,9 +194,12 @@ class tab_1(QWidget):
 
     @Slot(object)
     def print_test(self,data):
-        print("From Tab")
+        #print("From Tab")
         # print(data[0,:,0])
-        self.plot.setData(data[0,:,0])
+        for i in range(data.shape[0]):
+            self.plot_data.extend(data[i])
+        print(len(self.plot_data))
+        self.plot.setData(self.plot_data)
 
     def step_button(self):
         len = self.step_len.text()
@@ -196,7 +218,7 @@ class tab_1(QWidget):
         self.plot_data.clear()
         self.plot.setData()
         self.plot_widget.getPlotItem().setXRange(0,1000)
-        self.plot_widget.getPlotItem().setXRange(0,5000)
+        self.plot_widget.getPlotItem().setYRange(0,5000)
 
     def save_series_to_file(self):
         filename, _ = QFileDialog.getSaveFileName(
@@ -206,7 +228,7 @@ class tab_1(QWidget):
         if filename:
             with open(filename, 'w') as file:
                 file.write("x,y\n")  # CSV header
-                for point in zip(self.bt.bl_x, self.bt.bl_y):
+                for point in zip(list(range(len(self.plot_data))), self.plot_data):
                     file.write(f"{point[0]},{point[1]}\n")
             print(f"QLineSeries saved to {filename}")
 
